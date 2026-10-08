@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("gateway.errors")
 
@@ -154,6 +155,20 @@ def register_exception_handlers(app: FastAPI) -> None:
             message="request parameters failed validation",
             details={"errors": exc.errors()},
         )
+        return err.to_response(request_id_of(request))
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_exception(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        # Framework-level HTTP errors (unknown routes, wrong methods...)
+        # also use the stable envelope.
+        code = {404: "not_found", 405: "method_not_allowed"}.get(
+            exc.status_code, "http_error"
+        )
+        err = GatewayError(message=str(exc.detail))
+        err.status_code = exc.status_code
+        err.code = code
         return err.to_response(request_id_of(request))
 
     @app.exception_handler(Exception)
